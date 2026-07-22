@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentState Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="border-b border-gray-800 bg-[#0f172a] px-6 py-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center gap-3">
+            <span class="text-2xl">🛡️</span>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white">AgentState</h1>
+                <p class="text-xs text-gray-400">Resilience & Caching Control Plane</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse"></span>
+            <span class="text-xs text-gray-300 font-mono">Proxy Online: Port 8080</span>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 p-6 overflow-hidden">
+        <!-- Sidebar: Sessions List -->
+        <section class="lg:col-span-1 border border-gray-800 rounded-xl bg-[#0f172a] p-4 flex flex-col h-[calc(100vh-140px)]">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Agent Sessions</h2>
+            <div id="sessions-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                <!-- Session items populated dynamically -->
+                <div class="text-gray-500 text-sm py-4 text-center">No sessions logged yet. Run an agent through the proxy.</div>
+            </div>
+        </section>
+
+        <!-- Right Side: Details View -->
+        <section class="lg:col-span-3 border border-gray-800 rounded-xl bg-[#0f172a] p-6 flex flex-col h-[calc(100vh-140px)] overflow-y-auto">
+            <div id="details-container" class="hidden flex flex-col h-full">
+                <!-- Session Header Details -->
+                <div class="border-b border-gray-800 pb-4 mb-6 flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-2xl font-bold text-white" id="detail-session-id">session_id</h2>
+                            <span id="detail-session-status" class="px-2.5 py-0.5 rounded-full text-xs font-semibold">STATUS</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1" id="detail-session-created">Created at: --</p>
+                    </div>
+                    <!-- Totals Cards -->
+                    <div class="flex gap-4">
+                        <div class="bg-[#1e293b] border border-gray-700 px-4 py-2 rounded-lg text-center">
+                            <span class="block text-xs text-gray-400">Total Steps</span>
+                            <span class="text-lg font-bold text-white" id="total-steps">0</span>
+                        </div>
+                        <div class="bg-[#1e293b] border border-gray-700 px-4 py-2 rounded-lg text-center">
+                            <span class="block text-xs text-gray-400">Total Latency</span>
+                            <span class="text-lg font-bold text-white" id="total-latency">0.00s</span>
+                        </div>
+                        <div class="bg-[#1e293b] border border-gray-700 px-4 py-2 rounded-lg text-center">
+                            <span class="block text-xs text-gray-400">Total Cost (USD)</span>
+                            <span class="text-lg font-bold text-green-400" id="total-cost">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Execution Steps Logs -->
+                <div id="steps-container" class="flex-1 space-y-6 overflow-y-auto pr-2">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Empty Details Screen -->
+            <div id="empty-details" class="flex flex-col items-center justify-center h-full text-gray-500">
+                <span class="text-5xl mb-4">📊</span>
+                <p class="text-base font-medium">Select a session from the sidebar to inspect execution steps.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Script Operations -->
+    <script>
+        let selectedSessionId = null;
+        let refreshInterval = null;
+
+        // Format dates
+        function formatDateTime(isoString) {
+            if (!isoString) return '--';
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        // Fetch all sessions
+        async function loadSessions() {
+            try {
+                const res = await fetch('/api/sessions');
+                const sessions = await res.json();
+                
+                const list = document.getElementById('sessions-list');
+                if (sessions.length === 0) {
+                    list.innerHTML = `<div class="text-gray-500 text-sm py-4 text-center">No sessions logged yet.</div>`;
+                    return;
+                }
+                
+                list.innerHTML = sessions.map(session => {
+                    const statusColors = {
+                        'RUNNING': 'bg-blue-900/40 text-blue-300 border-blue-800',
+                        'COMPLETED': 'bg-green-900/40 text-green-300 border-green-800',
+                        'FAILED': 'bg-red-900/40 text-red-300 border-red-800'
+                    };
+                    
+                    const isSelected = session.id === selectedSessionId ? 'border-indigo-500 bg-[#1e293b]' : 'border-gray-800 hover:bg-[#131b2e]';
+                    
+                    return `
+                        <div onclick="selectSession('${session.id}')" class="p-3 border rounded-lg cursor-pointer transition-all ${isSelected}">
+                            <div class="flex justify-between items-center">
+                                <span class="font-mono text-sm font-semibold truncate max-w-[150px] text-white">${session.id}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full border ${statusColors[session.status] || 'bg-gray-800 text-gray-300'}">${session.status}</span>
+                            </div>
+                            <div class="text-[10px] text-gray-400 mt-2 flex justify-between">
+                                <span>Updated: ${new Date(session.updated_at).toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Failed to load sessions:", err);
+            }
+        }
+
+        // Select and load specific session details
+        async function selectSession(sessionId) {
+            selectedSessionId = sessionId;
+            document.getElementById('empty-details').classList.add('hidden');
+            document.getElementById('details-container').classList.remove('hidden');
+            
+            // Reload sidebar to highlight selection
+            await loadSessions();
+            await loadSessionDetails();
+            
+            // Start automatic polling if the session is running
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(async () => {
+                if (selectedSessionId === sessionId) {
+                    await loadSessionDetails();
+                }
+            }, 3000);
+        }
+
+        // Fetch detailed step logs for the active session
+        async function loadSessionDetails() {
+            if (!selectedSessionId) return;
+            
+            try {
+                const res = await fetch(`/api/sessions/${selectedSessionId}`);
+                if (res.status === 404) {
+                    selectedSessionId = null;
+                    document.getElementById('details-container').classList.add('hidden');
+                    document.getElementById('empty-details').classList.remove('hidden');
+                    return;
+                }
+                const data = await res.json();
+                
+                const s = data.session;
+                document.getElementById('detail-session-id').innerText = s.id;
+                
+                const statusBadge = document.getElementById('detail-session-status');
+                statusBadge.innerText = s.status;
+                statusBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold border ";
+                if (s.status === 'RUNNING') {
+                    statusBadge.classList.add('bg-blue-900/40', 'text-blue-300', 'border-blue-800');
+                } else if (s.status === 'COMPLETED') {
+                    statusBadge.classList.add('bg-green-900/40', 'text-green-300', 'border-green-800');
+                } else if (s.status === 'FAILED') {
+                    statusBadge.classList.add('bg-red-900/40', 'text-red-300', 'border-red-800');
+                }
+                
+                document.getElementById('detail-session-created').innerText = `Updated: ${formatDateTime(s.updated_at)}`;
+                
+                // Calculate aggregated stats
+                const totalCost = data.steps.reduce((sum, step) => sum + step.token_cost, 0);
+                const totalLatency = data.steps.reduce((sum, step) => sum + step.latency, 0);
+                
+                document.getElementById('total-steps').innerText = data.steps.length;
+                document.getElementById('total-latency').innerText = `${totalLatency.toFixed(2)}s`;
+                document.getElementById('total-cost').innerText = `$${totalCost.toFixed(5)}`;
+                
+                // Populate steps list
+                const container = document.getElementById('steps-container');
+                if (data.steps.length === 0) {
+                    container.innerHTML = `<div class="text-gray-500 text-center py-12">No execution steps recorded for this session yet.</div>`;
+                    return;
+                }
+                
+                container.innerHTML = data.steps.map((step, idx) => {
+                    const reqObj = JSON.parse(step.prompt);
+                    const resObj = JSON.parse(step.response);
+                    
+                    // Display either text prompt or message list
+                    const messages = reqObj.messages || [];
+                    const lastMessage = messages[messages.length - 1] || {};
+                    const lastPromptText = lastMessage.content || "Empty Prompt";
+                    
+                    // Display completion response or tool outputs
+                    const choices = resObj.choices || [];
+                    const choice = choices[0] || {};
+                    const responseText = choice.message?.content || JSON.stringify(choice.message?.tool_calls) || "Error / No Content";
+                    
+                    return `
+                        <div class="border border-gray-800 rounded-lg bg-[#131b2e] overflow-hidden shadow">
+                            <div class="bg-[#1e293b] px-4 py-3 flex justify-between items-center border-b border-gray-800">
+                                <div class="flex items-center gap-3">
+                                    <span class="bg-indigo-600 text-white font-bold h-6 w-6 rounded-full flex items-center justify-center text-xs">#${step.step_number}</span>
+                                    <span class="text-xs font-mono text-gray-400">Hash: ${step.request_hash.substring(0, 10)}...</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-xs text-gray-400">Latency: <strong class="text-white">${step.latency.toFixed(2)}s</strong></span>
+                                    <span class="text-xs text-gray-400">Cost: <strong class="text-green-400">$${step.token_cost.toFixed(5)}</strong></span>
+                                    <button onclick="resetFromStep('${s.id}', ${step.step_number})" class="text-xs font-medium bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-700 px-2 py-1 rounded transition-all">
+                                        Rollback from Here
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Prompt Card -->
+                                <div>
+                                    <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Prompt (Last Message)</h4>
+                                    <div class="p-3 bg-[#0b0f19] rounded border border-gray-800 text-sm overflow-auto max-h-[150px] font-mono text-gray-300">
+                                        ${escapeHTML(lastPromptText)}
+                                    </div>
+                                </div>
+                                <!-- Response Card -->
+                                <div>
+                                    <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">LLM Output</h4>
+                                    <div class="p-3 bg-[#0b0f19] rounded border border-gray-800 text-sm overflow-auto max-h-[150px] font-mono text-indigo-300">
+                                        ${escapeHTML(responseText)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Failed to load session details:", err);
+            }
+        }
+
+        // Reset cache starting from a specific step
+        async function resetFromStep(sessionId, stepNumber) {
+            if (!confirm(`Are you sure you want to rollback and delete all steps from Step #${stepNumber} onwards? This allows the agent to retry these steps.`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/sessions/${sessionId}/reset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step_number: stepNumber })
+                });
+                if (res.ok) {
+                    await selectSession(sessionId);
+                } else {
+                    alert("Failed to reset session.");
+                }
+            } catch (err) {
+                console.error("Error resetting session:", err);
+            }
+        }
+
+        // Helper to escape HTML tags
+        function escapeHTML(str) {
+            if (typeof str !== 'string') return str;
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Initial Load
+        loadSessions();
+        setInterval(loadSessions, 10000);
+    </script>
+</body>
+</html>
