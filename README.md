@@ -78,7 +78,7 @@ graph TD
 
 ```bash
 # Clone the repository (once created)
-git clone https://github.com/yourusername/agentstate.git
+git clone https://github.com/aleenz1102/AgentState.git
 cd agentstate
 
 # Create a virtual environment
@@ -138,7 +138,7 @@ Since this is a fresh local repository, follow these steps to upload it to your 
 2. Run the following commands in your terminal:
    ```bash
    # Add your remote GitHub URL
-   git remote add origin https://github.com/YOUR_USERNAME/agentstate.git
+   git remote add origin https://github.com/aleenz1102/AgentState.git
 
    # Rename default branch to main
    git branch -M main
