@@ -9,8 +9,7 @@
 
 **AgentState** is a lightweight, self-hosted proxy that intercepts your LLM and tool calls, automatically checkpoints their state, and lets you pause, edit, and resume runs from any point—saving you money and time.
 
-*(Note: Upload an animated GIF to this repo and replace this image link)*
-![AgentState Dashboard Demo](https://via.placeholder.com/800x400.png?text=AgentState+Dashboard+-+Replace+with+GIF)
+![AgentState Dashboard Demo](assets/demo.webp)
 
 ---
 
