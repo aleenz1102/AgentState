@@ -15,45 +15,43 @@
 
 ## ⚡ The 10-Second Setup
 
-**No SDKs. No code rewrites.** Just change your LLM client's `baseURL` to point to the AgentState proxy.
+### 1-Line Python Integration (Recommended)
+```python
+from agentstate import AgentStateOpenAI
 
-### Python (OpenAI SDK)
+# Automatically routes all completions through AgentState proxy!
+client = AgentStateOpenAI(session_id="session_user_9812", step_number=0)
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello AgentState!"}]
+)
+```
+
+### Standard OpenAI Client Setup (Python / Node.js)
+No SDKs required. Just change your LLM client's `baseURL` to point to the AgentState proxy:
+
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     api_key="your-api-key",
     base_url="http://localhost:8080/v1", # <-- Route through AgentState
-    default_headers={
-        "x-agent-session-id": "session_user_9812", 
-        "x-agent-step-number": "0" # Optional: track execution steps
-    }
+    default_headers={"x-agent-session-id": "session_user_9812", "x-agent-step-number": "0"}
 )
-```
-
-### Node.js (OpenAI SDK)
-```javascript
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: "your-api-key",
-  baseURL: "http://localhost:8080/v1", // <-- Route through AgentState
-  defaultHeaders: {
-    "x-agent-session-id": "session_user_9812", 
-    "x-agent-step-number": "0"
-  }
-});
 ```
 
 ---
 
 ## 🚀 Key Features
 
-* **🔌 Plug-and-Play Integration:** No SDKs or code changes required. Just swap your LLM provider's `baseURL` to point to AgentState.
+* **🔌 1-Line Plug-and-Play Integration:** Use our native `AgentStateOpenAI` wrapper or simply swap your LLM provider's `baseURL` to point to AgentState. Works seamlessly with OpenAI, LangChain, and CrewAI.
 * **💾 Automatic Checkpointing:** Every prompt, response, and tool invocation is saved to a local SQLite database.
-* **🔁 Fail-Safe Retries:** Automatic exponential backoff for failed tool executions and rate-limited LLM API calls.
+* **🔀 Multi-Model Fallback:** Transparently reroutes requests to fallback models (e.g. `gpt-3.5-turbo`, Claude, Ollama) if the primary provider hits rate limits (429) or server errors (500).
+* **✋ Human-in-the-Loop Gateway:** Intercept sensitive tool calls (e.g. executing shell commands, processing payments) and pause execution until approved via dashboard or API.
+* **📥 Fine-Tuning Dataset Exporter:** Export production agent trajectories as OpenAI-compatible `.jsonl` fine-tuning datasets in a single click.
+* **🔔 Webhook Alerts:** Receive real-time Slack/Discord webhooks when agent runs fail or require human approval.
 * **🎛️ Session Replay & Rollback:** Visual dashboard to inspect agent trajectories. If a step fails, fix the code/prompt and resume the run exactly where it left off.
-* **✋ Human-in-the-Loop Gateway:** Intercept sensitive tool calls (e.g., executing shell commands, processing payments) and pause execution until approved via webhook or dashboard.
 * **🔌 Offline Mock Mode:** Run simulations completely offline with zero API costs using the built-in mock responder.
 
 ---

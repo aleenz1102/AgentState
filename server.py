@@ -94,6 +94,7 @@ async def proxy_completions(request: Request):
         
         approval_id = db.create_approval_request(session_id, step_number, tool_name, last_msg)
         print(f"[HITL GATEWAY] Session: {session_id}, Step: {step_number} PAUSED waiting for approval #{approval_id}...")
+        await send_webhook_alert("APPROVAL_REQUIRED", {"session_id": session_id, "approval_id": approval_id, "tool_name": tool_name, "prompt": last_msg})
         
         # Poll DB until approval is resolved or timed out (60 seconds)
         start_wait = time.time()
@@ -142,13 +143,27 @@ async def proxy_completions(request: Request):
         
     print(f"[CACHE MISS] Session: {session_id}, Step: {step_number}. Calling LLM...")
     
+    # Check for fallback model preferences
+    fallback_model = headers.get("x-agent-fallback-model") or os.getenv("FALLBACK_MODEL")
+    
     # Forward to real LLM
     start_time = time.time()
     response_data, status_code = await forward_to_llm_internal(body, request.headers)
     latency = time.time() - start_time
     
+    # Handle multi-model fallback on provider error/rate-limit
+    if status_code != 200 and fallback_model and body.get("model") != fallback_model:
+        print(f"[FALLBACK TRIGGERED] Primary model failed ({status_code}). Rerouting to fallback model: {fallback_model}...")
+        body["model"] = fallback_model
+        start_time = time.time()
+        response_data, status_code = await forward_to_llm_internal(body, request.headers)
+        latency = time.time() - start_time
+        if status_code == 200:
+            print(f"[FALLBACK SUCCESS] Rerouted execution to {fallback_model} completed successfully!")
+    
     if status_code != 200:
         db.update_session_status(session_id, "FAILED")
+        await send_webhook_alert("SESSION_FAILED", {"session_id": session_id, "step_number": step_number, "error": response_data})
         return JSONResponse(content=response_data, status_code=status_code)
         
     # Calculate token costs (standard estimate or read from response usage)
@@ -171,6 +186,25 @@ async def proxy_completions(request: Request):
     )
     
     return JSONResponse(content=response_data)
+
+# Webhook Alert Helper
+async def send_webhook_alert(event_type: str, details: dict):
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if not webhook_url:
+        return
+        
+    payload = {
+        "event": event_type,
+        "timestamp": time.time(),
+        "details": details
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(webhook_url, json=payload, timeout=5.0)
+            print(f"[WEBHOOK SENT] Event: {event_type} delivered to {webhook_url}")
+        except Exception as e:
+            print(f"[WEBHOOK FAILED] Error sending {event_type} to {webhook_url}: {e}")
 
 # Dashboard & Management APIs
 @app.get("/api/sessions")
@@ -208,6 +242,27 @@ async def resolve_approval_action(approval_id: int, payload: dict):
         raise HTTPException(status_code=400, detail="Action must be APPROVED or REJECTED")
     db.update_approval_status(approval_id, action)
     return {"message": f"Approval #{approval_id} updated to {action}"}
+
+# Dataset Exporter APIs (Fine-Tuning JSONL)
+@app.get("/api/sessions/{session_id}/export")
+async def export_session_dataset(session_id: str):
+    dataset = db.get_exportable_steps(session_id)
+    jsonl_str = "\n".join(json.dumps(entry) for entry in dataset)
+    return Response(
+        content=jsonl_str,
+        media_type="application/x-jsonlines",
+        headers={"Content-Disposition": f"attachment; filename=session_{session_id}_dataset.jsonl"}
+    )
+
+@app.get("/api/export/dataset")
+async def export_bulk_dataset():
+    dataset = db.get_exportable_steps()
+    jsonl_str = "\n".join(json.dumps(entry) for entry in dataset)
+    return Response(
+        content=jsonl_str,
+        media_type="application/x-jsonlines",
+        headers={"Content-Disposition": "attachment; filename=agentstate_fine_tuning_dataset.jsonl"}
+    )
 
 # HTTP Helpers for forwarding
 async def forward_to_llm(request: Request):

@@ -164,6 +164,41 @@ def update_approval_status(approval_id: int, status: str):
         )
         conn.commit()
 
+def get_exportable_steps(session_id: str = None):
+    """
+    Returns steps formatted as OpenAI fine-tuning JSONL training entries:
+    {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+    """
+    with get_db() as conn:
+        if session_id:
+            cursor = conn.execute("SELECT prompt, response FROM steps WHERE session_id = ? ORDER BY step_number ASC", (session_id,))
+        else:
+            cursor = conn.execute("""
+                SELECT steps.prompt, steps.response FROM steps 
+                JOIN sessions ON steps.session_id = sessions.id
+                WHERE sessions.status = 'COMPLETED'
+                ORDER BY steps.session_id, steps.step_number ASC
+            """)
+        
+        rows = cursor.fetchall()
+        dataset = []
+        for row in rows:
+            try:
+                req_obj = json.loads(row["prompt"])
+                res_obj = json.loads(row["response"])
+                
+                messages = req_obj.get("messages", [])
+                choices = res_obj.get("choices", [])
+                
+                if messages and choices:
+                    assistant_msg = choices[0].get("message", {})
+                    full_convo = list(messages) + [assistant_msg]
+                    dataset.append({"messages": full_convo})
+            except Exception:
+                continue
+                
+        return dataset
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully at:", DB_PATH)
