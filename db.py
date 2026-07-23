@@ -38,6 +38,19 @@ def init_db():
                 UNIQUE(session_id, step_number)
             )
         """)
+        # Create approvals table for Human-in-the-Loop gateway
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS approvals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                step_number INTEGER DEFAULT 0,
+                tool_name TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            )
+        """)
         conn.commit()
 
 def calculate_hash(prompt: str, tools_json: str = "") -> str:
@@ -122,6 +135,34 @@ def get_all_sessions():
         cursor = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC")
         sessions = [dict(row) for row in cursor.fetchall()]
         return sessions
+
+def create_approval_request(session_id: str, step_number: int, tool_name: str, prompt: str) -> int:
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO approvals (session_id, step_number, tool_name, prompt, status, created_at)
+            VALUES (?, ?, ?, ?, 'PENDING', ?)
+        """, (session_id, step_number, tool_name, prompt, datetime.now()))
+        conn.commit()
+        return cursor.lastrowid
+
+def get_pending_approvals():
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM approvals WHERE status = 'PENDING' ORDER BY created_at DESC")
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_approval_by_id(approval_id: int):
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_approval_status(approval_id: int, status: str):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE approvals SET status = ? WHERE id = ?",
+            (status, approval_id)
+        )
+        conn.commit()
 
 if __name__ == "__main__":
     init_db()

@@ -101,13 +101,21 @@ python server.py
 * The proxy will start listening on `http://localhost:8080`.
 * The embedded dashboard will be live at `http://localhost:8080/dashboard`.
 
-### 3. Run the Agent Simulator
-To see AgentState in action, run the simulated agent:
+### 3. Run the Agent Simulators
+To see AgentState resilience in action:
 ```bash
 python test_agent.py
 ```
 * **First Run:** The agent will execute Step 0 (Fetch customer) and Step 1 (Generate report) successfully, then simulate a crash on Step 2 (Send email).
-* **Second Run:** Run `python test_agent.py` again. Steps 0 and 1 will be returned from the local SQLite cache instantly (**~15ms, $0.00 token cost**), and Step 2 will be retried and complete successfully.
+* **Second Run:** Run `python test_agent.py` again. Steps 0 and 1 will be returned from local cache instantly (**~15ms, $0.00 token cost**), and Step 2 completes cleanly.
+
+To see the **Human-in-the-Loop Safety Gateway** in action:
+```bash
+python test_hitl_agent.py
+```
+* The terminal will pause on Step #1 attempting a sensitive `send_email` action.
+* Open `http://localhost:8080/dashboard`, view the **Pending Approval Banner**, and click **Approve Action** (or **Reject Action**).
+* The agent in your terminal will immediately resume and complete!
 
 ---
 
@@ -118,15 +126,14 @@ python test_agent.py
   * **Headers:**
     * `x-agent-session-id` (Required for caching): Unique session ID tracking the agent run.
     * `x-agent-step-number` (Recommended): Step index of the execution loop (e.g. `0`, `1`, `2`).
+    * `x-agent-require-approval` (Optional): Set to `"true"` to trigger the HITL Safety Gateway.
 
-### Management API (Used by Dashboard)
+### Management & Approval API (Used by Dashboard)
 * **`GET /api/sessions`**: Retrieve list of all logged sessions.
 * **`GET /api/sessions/{session_id}`**: Retrieve session metadata and step list.
 * **`POST /api/sessions/{session_id}/reset`**: Rollback a session.
-  * **Body:** `{"step_number": int}`
-  * **Description:** Deletes all cached steps starting from the specified index and marks the session status as `RUNNING`.
-* **`POST /api/sessions/{session_id}/status`**: Update session status.
-  * **Body:** `{"status": "RUNNING" | "COMPLETED" | "FAILED"}`
+* **`GET /api/approvals/pending`**: List all actions currently waiting for human approval.
+* **`POST /api/approvals/{id}/action`**: Approve or reject an action (`{"action": "APPROVED" | "REJECTED"}`).
 
 ---
 

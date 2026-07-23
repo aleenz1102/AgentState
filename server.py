@@ -77,6 +77,58 @@ async def proxy_completions(request: Request):
     
     request_hash = db.calculate_hash(prompt_str, tools_str)
     
+    # Check for Human-in-the-Loop approval requirements
+    require_approval = headers.get("x-agent-require-approval", "false").lower() == "true"
+    
+    # Auto-detect sensitive prompt contents if flag is not set explicitly
+    last_msg = messages[-1].get("content", "") if messages else ""
+    if not require_approval and any(keyword in last_msg.lower() for keyword in ["send_email", "execute_command", "delete_database", "stripe_charge"]):
+        require_approval = True
+
+    if require_approval:
+        tool_name = "sensitive_operation"
+        if "send_email" in last_msg.lower(): tool_name = "send_email"
+        elif "execute_command" in last_msg.lower(): tool_name = "execute_command"
+        elif "delete_database" in last_msg.lower(): tool_name = "delete_database"
+        elif "stripe_charge" in last_msg.lower(): tool_name = "stripe_charge"
+        
+        approval_id = db.create_approval_request(session_id, step_number, tool_name, last_msg)
+        print(f"[HITL GATEWAY] Session: {session_id}, Step: {step_number} PAUSED waiting for approval #{approval_id}...")
+        
+        # Poll DB until approval is resolved or timed out (60 seconds)
+        start_wait = time.time()
+        approved = False
+        rejected = False
+        
+        import asyncio
+        while time.time() - start_wait < 60:
+            app_req = db.get_approval_by_id(approval_id)
+            if app_req:
+                if app_req["status"] == "APPROVED":
+                    approved = True
+                    break
+                elif app_req["status"] == "REJECTED":
+                    rejected = True
+                    break
+            await asyncio.sleep(0.5)
+            
+        if rejected:
+            print(f"[HITL GATEWAY] Approval #{approval_id} REJECTED by human.")
+            db.update_session_status(session_id, "FAILED")
+            return JSONResponse(
+                status_code=403,
+                content={"error": {"message": "Execution blocked: Tool call rejected by Human-in-the-Loop Gateway", "type": "human_rejection"}}
+            )
+        elif not approved:
+            print(f"[HITL GATEWAY] Approval #{approval_id} TIMED OUT.")
+            db.update_session_status(session_id, "FAILED")
+            return JSONResponse(
+                status_code=408,
+                content={"error": {"message": "Execution blocked: Human approval timed out after 60s", "type": "approval_timeout"}}
+            )
+            
+        print(f"[HITL GATEWAY] Approval #{approval_id} APPROVED! Resuming LLM execution...")
+
     # Check cache
     cached_step = db.get_cached_step(session_id, step_number, request_hash)
     if cached_step:
@@ -143,6 +195,19 @@ async def set_session_status(session_id: str, payload: dict):
     status = payload.get("status", "RUNNING")
     db.update_session_status(session_id, status)
     return {"message": f"Session {session_id} status updated to {status}."}
+
+# Human-in-the-Loop Approval APIs
+@app.get("/api/approvals/pending")
+async def list_pending_approvals():
+    return db.get_pending_approvals()
+
+@app.post("/api/approvals/{approval_id}/action")
+async def resolve_approval_action(approval_id: int, payload: dict):
+    action = payload.get("action", "").upper()
+    if action not in ["APPROVED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Action must be APPROVED or REJECTED")
+    db.update_approval_status(approval_id, action)
+    return {"message": f"Approval #{approval_id} updated to {action}"}
 
 # HTTP Helpers for forwarding
 async def forward_to_llm(request: Request):

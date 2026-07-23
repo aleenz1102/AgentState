@@ -32,6 +32,20 @@
         </div>
     </header>
 
+    <!-- Pending Approvals Banner -->
+    <div id="approvals-banner" class="hidden bg-amber-900/50 border-b border-amber-700/60 px-6 py-3 flex justify-between items-center text-amber-200">
+        <div class="flex items-center gap-3">
+            <span class="text-xl animate-bounce">⚠️</span>
+            <div>
+                <span class="font-bold text-sm" id="approval-count-text">1 Action Requires Human Approval</span>
+                <p class="text-xs text-amber-300/80" id="approval-detail-text">Session: session_123 - Attempting tool call</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3" id="approval-action-buttons">
+            <!-- Dynamic Buttons Populated via JS -->
+        </div>
+    </div>
+
     <!-- Main Content Grid -->
     <main class="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 p-6 overflow-hidden">
         <!-- Sidebar: Sessions List -->
@@ -285,9 +299,61 @@
                 .replace(/'/g, "&#039;");
         }
 
+        // Check for pending human approvals
+        async function checkPendingApprovals() {
+            try {
+                const res = await fetch('/api/approvals/pending');
+                const approvals = await res.json();
+                
+                const banner = document.getElementById('approvals-banner');
+                if (approvals.length === 0) {
+                    banner.classList.add('hidden');
+                    return;
+                }
+                
+                banner.classList.remove('hidden');
+                const latest = approvals[0];
+                document.getElementById('approval-count-text').innerText = `${approvals.length} Action(s) Awaiting Human Approval`;
+                document.getElementById('approval-detail-text').innerText = `Session [${latest.session_id}] - Tool: ${latest.tool_name}`;
+                
+                const btnContainer = document.getElementById('approval-action-buttons');
+                btnContainer.innerHTML = `
+                    <button onclick="resolveApproval(${latest.id}, 'APPROVED')" class="bg-green-600 hover:bg-green-500 text-white font-bold text-xs px-3 py-1.5 rounded transition-all shadow">
+                        ✅ Approve Action
+                    </button>
+                    <button onclick="resolveApproval(${latest.id}, 'REJECTED')" class="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded transition-all shadow">
+                        ❌ Reject Action
+                    </button>
+                `;
+            } catch (err) {
+                console.error("Failed to check pending approvals:", err);
+            }
+        }
+
+        // Send approval or rejection action
+        async function resolveApproval(approvalId, action) {
+            try {
+                const res = await fetch(`/api/approvals/${approvalId}/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                if (res.ok) {
+                    await checkPendingApprovals();
+                    if (selectedSessionId) await loadSessionDetails();
+                } else {
+                    alert("Failed to update approval action.");
+                }
+            } catch (err) {
+                console.error("Error resolving approval:", err);
+            }
+        }
+
         // Initial Load
         loadSessions();
+        checkPendingApprovals();
         setInterval(loadSessions, 10000);
+        setInterval(checkPendingApprovals, 2000);
     </script>
 </body>
 </html>
