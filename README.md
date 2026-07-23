@@ -5,9 +5,46 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg)](https://fastapi.tiangolo.com/)
 
-> **Problem:** When an AI agent crashes on step 87 out of 100, you lose the entire execution history, waste thousands of tokens, and leave the user with a broken experience.
->
-> **Solution:** AgentState is a lightweight, self-hosted proxy that intercepts your agent's LLM and tool calls, automatically checkpoints their execution state, handles retries, and lets you pause, edit, and resume runs from any point.
+**Stop wasting tokens when AI agents crash.** When an agent fails on step 87 out of 100, you typically lose the entire execution history and have to restart. 
+
+**AgentState** is a lightweight, self-hosted proxy that intercepts your LLM and tool calls, automatically checkpoints their state, and lets you pause, edit, and resume runs from any point—saving you money and time.
+
+*(Note: Upload an animated GIF to this repo and replace this image link)*
+![AgentState Dashboard Demo](https://via.placeholder.com/800x400.png?text=AgentState+Dashboard+-+Replace+with+GIF)
+
+---
+
+## ⚡ The 10-Second Setup
+
+**No SDKs. No code rewrites.** Just change your LLM client's `baseURL` to point to the AgentState proxy.
+
+### Python (OpenAI SDK)
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-api-key",
+    base_url="http://localhost:8080/v1", # <-- Route through AgentState
+    default_headers={
+        "x-agent-session-id": "session_user_9812", 
+        "x-agent-step-number": "0" # Optional: track execution steps
+    }
+)
+```
+
+### Node.js (OpenAI SDK)
+```javascript
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: "your-api-key",
+  baseURL: "http://localhost:8080/v1", // <-- Route through AgentState
+  defaultHeaders: {
+    "x-agent-session-id": "session_user_9812", 
+    "x-agent-step-number": "0"
+  }
+});
+```
 
 ---
 
@@ -19,42 +56,6 @@
 * **🎛️ Session Replay & Rollback:** Visual dashboard to inspect agent trajectories. If a step fails, fix the code/prompt and resume the run exactly where it left off.
 * **✋ Human-in-the-Loop Gateway:** Intercept sensitive tool calls (e.g., executing shell commands, processing payments) and pause execution until approved via webhook or dashboard.
 * **🔌 Offline Mock Mode:** Run simulations completely offline with zero API costs using the built-in mock responder.
-
----
-
-## 📦 How It Works
-
-Simply change your LLM client's endpoint to route requests through the AgentState proxy.
-
-### Node.js (OpenAI SDK)
-```javascript
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "mock-key",
-  // Point to your local AgentState proxy
-  baseURL: "http://localhost:8080/v1", 
-  defaultHeaders: {
-    // Pass session ID and step numbers to track agent state
-    "x-agent-session-id": "session_user_9812", 
-    "x-agent-step-number": "0"
-  }
-});
-```
-
-### Python (OpenAI SDK)
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    api_key="mock-key",
-    base_url="http://localhost:8080/v1",
-    default_headers={
-        "x-agent-session-id": "session_user_9812",
-        "x-agent-step-number": "0"
-    }
-)
-```
 
 ---
 
@@ -127,25 +128,6 @@ python test_agent.py
   * **Description:** Deletes all cached steps starting from the specified index and marks the session status as `RUNNING`.
 * **`POST /api/sessions/{session_id}/status`**: Update session status.
   * **Body:** `{"status": "RUNNING" | "COMPLETED" | "FAILED"}`
-
----
-
-## 📤 Push to Your GitHub
-
-Since this is a fresh local repository, follow these steps to upload it to your GitHub profile:
-
-1. Go to [github.com/new](https://github.com/new) and create a new repository named `agentstate` (do not initialize with README, license, or `.gitignore`).
-2. Run the following commands in your terminal:
-   ```bash
-   # Add your remote GitHub URL
-   git remote add origin https://github.com/aleenz1102/AgentState.git
-
-   # Rename default branch to main
-   git branch -M main
-
-   # Push code to GitHub
-   git push -u origin main
-   ```
 
 ---
 
